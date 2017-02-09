@@ -1,4 +1,10 @@
-module Encodings where
+module Encodings
+  ( atLeastOne
+  , atMostOnePairwise
+  , antiCollocation
+  , capacityLimit
+  , serverUpperLimit
+  ) where
 
 import Control.Monad.Trans.Reader (ask)
 import Data.Function (on)
