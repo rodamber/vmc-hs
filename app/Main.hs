@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Encoder
 
 main :: IO ()
-main = someFunc
+main = putStrLn "main not implemented"
