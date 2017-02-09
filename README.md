@@ -11,4 +11,4 @@ problem
 ## **NOTE**
 
 The solution does not assume that "for each VM ν ∈ V , cpu_req(ν) = 1 and ram_req(ν) = 1"
-as stated at the beginning of page of the [spec](./spec/project-1.pdf).
+as stated at the beginning of page 2 of the [spec](./spec/project-1.pdf).
