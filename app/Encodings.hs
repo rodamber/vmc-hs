@@ -40,7 +40,7 @@ antiCollocation = do
   Env bimap servers vms <- ask
   (min,max) <- fromJust $ moreLits (length vms)
 
-  let acLit = \vm -> [min..max] !! (vmID vm)
+  let acLit vm = [min..max] !! (vmID vm)
 
   let acCNF = do
         v <- vms
