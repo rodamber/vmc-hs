@@ -29,6 +29,7 @@ executable vmc-hs-exe
                      , vmc-hs
                      , transformers
                      , bimap
+                     , picosat
   other-modules:       Encoder
                      , PBEncoder
                      , Encodings
