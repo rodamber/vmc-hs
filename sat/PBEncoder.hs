@@ -15,9 +15,9 @@ swc (PB wxs k) = do
   let n = length wxs
   (min,max) <- fromJust $ moreLits (k * n)
 
-  let x i = (map snd wxs) !! i
-  let w i = (map fst wxs) !! i
-  let s i j = [min..max] !! (i * k + j)
+  let x i = (map snd wxs) !! (i - 1)
+  let w i = (map fst wxs) !! (i - 1)
+  let s i j = [min..max] !! ((i - 1) * k + (j - 1))
 
   return $
     [[- x i, s i j] | i <- [1..n], j <- [1..w i]]
