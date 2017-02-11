@@ -1,6 +1,20 @@
 module Main where
 
-import Encoder
+import Picosat
 
-main :: IO ()
-main = putStrLn "main not implemented"
+import Encoder
+import Encodings
+
+import Types
+
+baseEncodings :: Encoder CNF
+baseEncodings = concat <$> sequence
+  [ atLeastOne
+  , atMostOnePairwise
+  , antiCollocation
+  , capacityLimit -- here is the error
+  , serverUpperLimit 2
+  ]
+
+main :: IO Solution
+main  = solve $ fst $ encode (ss,vv) baseEncodings
