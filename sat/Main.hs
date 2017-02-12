@@ -1,20 +1,77 @@
 module Main where
 
+import Control.Monad (mapM_)
+import Data.List (sortBy, nub)
+import qualified Data.Bimap as BM
+import Data.Maybe (mapMaybe)
+import Data.Ord (comparing)
+import Data.Tuple (swap)
+
 import Picosat
 
 import Encoder
 import Encodings
-
 import Types
 
-baseEncodings :: Encoder CNF
-baseEncodings = concat <$> sequence
+encoder :: Int -> Encoder CNF
+encoder n = concat <$> sequence
   [ atLeastOne
   , atMostOnePairwise
   , antiCollocation
-  , capacityLimit -- here is the error
-  , serverUpperLimit 2
+  , capacityLimit
+  , serverUpperLimit n
   ]
 
-main :: IO Solution
-main  = solve $ fst $ encode (ss,vv) baseEncodings
+cnf :: Environment -> Int -> CNF
+cnf env n = encode env (encoder n)
+
+main = do
+  Just a <- solution2assignment env <$> main' env
+  output a
+  where env = populate (ss,vv)
+
+main' :: Environment -> IO Solution
+main' env = loop (length ss) Unknown
+  where
+    loop :: Int -> Solution -> IO Solution
+    loop n previousSolution =
+      case previousSolution of
+        Solution _ -> check
+        Unknown    -> check
+        Unsatisfiable -> error "loop: unsat"
+      where
+        check :: IO Solution
+        check = do
+          newSolution <- solve (cnf env n)
+          case newSolution of
+            Unsatisfiable -> return previousSolution
+            Solution _    -> loop (n-1) newSolution
+            Unknown -> error "check: unknown"
+
+type Assignment = [(VM,Server)]
+
+solution2assignment :: Environment -> Solution -> Maybe Assignment
+solution2assignment env (Solution sol) =
+  let lookup = flip BM.lookup (bimap env)
+  in Just
+  $ sortBy (comparing (jobID . fst))
+  $ sortBy (comparing (vmIndex . fst))
+  $ map swap
+  $ mapMaybe lookup sol
+solution2assignment _ _ = Nothing
+
+output :: Assignment -> IO ()
+output a = do
+  putStrLn $ "o " ++ show optimumValue
+  mapM_ putVS a
+
+  where
+    optimumValue = length $ nub $ snd <$> a
+
+    putVS (v,s) = putStrLn . concat $
+      [ show (jobID v)
+      , " "
+      , show (vmIndex v)
+      , " -> "
+      , show (serverID s)
+      ]

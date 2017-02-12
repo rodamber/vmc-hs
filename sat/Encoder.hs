@@ -38,9 +38,6 @@ moreLits x
       return (n + 1, n + x)
   | otherwise = Nothing
 
-encode :: Problem -> Encoder CNF -> (CNF, LitCount)
-encode prob encoder = runState (runReaderT encoder env) litCount
-  where
-    env = populate prob
-    litCount = B.size (bimap env)
-
+encode :: Environment -> Encoder CNF -> CNF
+encode env encoder = evalState (runReaderT encoder env) litCount
+  where litCount = B.size (bimap env)
