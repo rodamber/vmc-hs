@@ -42,20 +42,25 @@ antiCollocation = do
 
   let acLit vm = [min..max] !! (vmID vm)
 
-  let acCNF = do
+  let acCNF :: Clause
+      acCNF = do
         v <- vms
         let sig = if hasAntiCollocation v then 1 else -1
         return (sig * acLit v)
 
-  return $ do
-    s <- servers
-    j <- jobs vms
-    (v1,v2) <- pairs j
+  let acClauses :: [Clause]
+      acClauses = do
+        s <- servers
+        j <- jobs vms
+        (v1,v2) <- pairs j
 
-    let lit1 = lookupLit bimap s v1
-    let lit2 = lookupLit bimap s v2
+        let lit1 = lookupLit bimap s v1
+        let lit2 = lookupLit bimap s v2
 
-    return (acCNF ++ [-(acLit v1), -(acLit v2), -lit1, -lit2])
+        return [-(acLit v1), -(acLit v2), -lit1, -lit2]
+
+  return $ acCNF : acClauses
+
 
 jobs :: [VM] -> [[VM]]
 jobs = groupBy ((==) `on` jobID)

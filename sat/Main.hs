@@ -13,8 +13,8 @@ import Encoder
 import Encodings
 import Types
 
-encoder :: Int -> Encoder CNF
-encoder n = concat <$> sequence
+constraints :: Int -> [Encoder CNF]
+constraints n =
   [ atLeastOne
   , atMostOnePairwise
   , antiCollocation
@@ -22,13 +22,45 @@ encoder n = concat <$> sequence
   , serverUpperLimit n
   ]
 
+encoder :: [Encoder CNF] -> Encoder CNF
+encoder es = concat <$> sequence es
+
 cnf :: Environment -> Int -> CNF
-cnf env n = encode env (encoder n)
+cnf env n = encode env (encoder (constraints n))
+
+type Assignment = [(VM,Server)]
+
+solution2assignment :: Environment -> Solution -> Maybe Assignment
+solution2assignment env (Solution sol) =
+  let lookup = flip BM.lookup (bimap env)
+  in Just
+     $ sortBy (comparing (jobID . fst))
+     $ sortBy (comparing (vmIndex . fst))
+     $ map swap
+     $ mapMaybe lookup sol
+solution2assignment _ _ = Nothing
+
+output :: Assignment -> IO ()
+output a = do
+  putStrLn $ "o " ++ show optimumValue
+  mapM_ putVS a
+
+  where
+    optimumValue = length $ nub $ snd <$> a
+
+    putVS (v,s) = putStrLn . concat $
+      [ show (jobID v)
+      , " "
+      , show (vmIndex v)
+      , " -> "
+      , show (serverID s)
+      ]
 
 main = do
   Just a <- solution2assignment env <$> main' env
   output a
-  where env = populate (ss,vv)
+  where
+    env = populate (ss,vv)
 
 main' :: Environment -> IO Solution
 main' env = loop (length ss) Unknown
@@ -48,30 +80,3 @@ main' env = loop (length ss) Unknown
             Solution _    -> loop (n-1) newSolution
             Unknown -> error "check: unknown"
 
-type Assignment = [(VM,Server)]
-
-solution2assignment :: Environment -> Solution -> Maybe Assignment
-solution2assignment env (Solution sol) =
-  let lookup = flip BM.lookup (bimap env)
-  in Just
-  $ sortBy (comparing (jobID . fst))
-  $ sortBy (comparing (vmIndex . fst))
-  $ map swap
-  $ mapMaybe lookup sol
-solution2assignment _ _ = Nothing
-
-output :: Assignment -> IO ()
-output a = do
-  putStrLn $ "o " ++ show optimumValue
-  mapM_ putVS a
-
-  where
-    optimumValue = length $ nub $ snd <$> a
-
-    putVS (v,s) = putStrLn . concat $
-      [ show (jobID v)
-      , " "
-      , show (vmIndex v)
-      , " -> "
-      , show (serverID s)
-      ]
