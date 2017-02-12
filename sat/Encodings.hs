@@ -1,69 +1,61 @@
-module Encodings
-  ( atLeastOne
-  , atMostOnePairwise
-  , antiCollocation
-  , capacityLimit
-  , serverUpperLimit
-  ) where
+module Encodings where
 
 import Control.Monad.Trans.Reader (ask)
 import Data.Function (on)
-import Data.List (groupBy, tails)
+import Data.List (groupBy, sortBy, tails)
 import Data.Maybe (fromJust)
+import Data.Ord (comparing)
 
 import Encoder
 import PBEncoder
 import Types
 
+--------------------------------------------------------------------------------
+
+atLeastOne' :: [Lit] -> CNF
+atLeastOne' = return
+
 atLeastOne :: Encoder CNF
 atLeastOne = do
   Env bimap servers vms <- ask
-  return [[lookupLit bimap s v | s <- servers] | v <- vms]
+  return $ do
+    v <- vms
+    atLeastOne' $ map (flip (lookupLit bimap) v) servers
+
+--------------------------------------------------------------------------------
+
+atMostOnePairwise' :: [Lit] -> CNF
+atMostOnePairwise' lits = [[-l1, -l2] | (l1,l2) <- pairs lits]
+
+pairs :: [a] -> [(a,a)]
+pairs xs = concat $ zipWith zip (map repeat xs) (tails (tail xs))
 
 atMostOnePairwise :: Encoder CNF
 atMostOnePairwise = do
   Env bimap servers vms <- ask
   return $ do
-    (s1,s2) <- pairs servers
-    v       <- vms
+    v <- vms
+    let lits = map (flip (lookupLit bimap) v) servers
+    atMostOnePairwise' lits
 
-    let lit1 = lookupLit bimap s1 v
-    let lit2 = lookupLit bimap s2 v
+--------------------------------------------------------------------------------
 
-    return [-lit1, -lit2]
-
-pairs :: [a] -> [(a,a)]
-pairs xs = concat $ zipWith zip (map repeat xs) (tails (tail xs))
-
-antiCollocation :: Encoder CNF
-antiCollocation = do
+-- At most one **pairwise** encoding of anti-collocation vms per server.
+antiCollocationPairwise :: Encoder CNF
+antiCollocationPairwise = do
   Env bimap servers vms <- ask
-  (min,max) <- fromJust $ moreLits (length vms)
 
-  let acLit vm = [min..max] !! (vmID vm)
+  return $ do
+    s <- servers
+    j <- jobs vms
 
-  let acCNF :: Clause
-      acCNF = do
-        v <- vms
-        let sig = if hasAntiCollocation v then 1 else -1
-        return (sig * acLit v)
-
-  let acClauses :: [Clause]
-      acClauses = do
-        s <- servers
-        j <- jobs vms
-        (v1,v2) <- pairs j
-
-        let lit1 = lookupLit bimap s v1
-        let lit2 = lookupLit bimap s v2
-
-        return [-(acLit v1), -(acLit v2), -lit1, -lit2]
-
-  return $ acCNF : acClauses
-
+    let acLits = map (lookupLit bimap s) (filter hasAntiCollocation j)
+    atMostOnePairwise' acLits
 
 jobs :: [VM] -> [[VM]]
-jobs = groupBy ((==) `on` jobID)
+jobs = groupBy ((==) `on` jobID) . sortBy (comparing vmID)
+
+--------------------------------------------------------------------------------
 
 capacityLimit :: Encoder CNF
 capacityLimit = do
@@ -90,6 +82,8 @@ cap RAM = ramCap
 req :: Hardware -> VM -> Int
 req CPU = cpuReq
 req RAM = ramReq
+
+--------------------------------------------------------------------------------
 
 serverUpperLimit :: Int -> Encoder CNF
 serverUpperLimit n = do

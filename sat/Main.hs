@@ -17,7 +17,7 @@ constraints :: Int -> [Encoder CNF]
 constraints n =
   [ atLeastOne
   , atMostOnePairwise
-  , antiCollocation
+  , antiCollocationPairwise
   , capacityLimit
   , serverUpperLimit n
   ]
