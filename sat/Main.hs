@@ -6,11 +6,13 @@ import qualified Data.Bimap as BM
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import Data.Tuple (swap)
+import System.Environment (getArgs)
 
 import Picosat
 
 import Encoder
 import Encodings
+import Parser
 import Types
 
 constraints :: Int -> [Encoder CNF]
@@ -57,13 +59,15 @@ output a = do
       ]
 
 main = do
+  fileName <- (!!0) <$> getArgs
+
+  Just problem <- parse fileName
+  let env = populate problem
   Just a <- solution2assignment env <$> main' env
   output a
-  where
-    env = populate (ss,vv)
 
 main' :: Environment -> IO Solution
-main' env = loop (length ss) Unknown
+main' env = loop (length $ servers env) Unknown
   where
     loop :: Int -> Solution -> IO Solution
     loop n previousSolution =
