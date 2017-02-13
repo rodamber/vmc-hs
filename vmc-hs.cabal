@@ -19,6 +19,7 @@ library
                      , Parser
   build-depends:       base >= 4.7 && < 5
                      , text
+                     , trifecta
   default-language:    Haskell2010
 
 executable vmc-hs-exe

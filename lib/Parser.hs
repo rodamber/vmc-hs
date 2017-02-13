@@ -2,26 +2,27 @@
 
 module Parser where
 
--- import qualified Data.Text as T
--- import qualified Data.Text.Read as T
--- import qualified Data.Text.IO as T
+import Control.Applicative
+import Text.Trifecta
 
--- import Types
+import Types
 
--- parse :: T.Text -> Problem
--- parse input = Problem servers vms
---   where
---     lines       = T.lines input
---     serverCount = toInt (head lines)
---     servers     = map readServer (take serverCount (drop 1 lines))
---     vms         = map readVM (drop (serverCount + 2) lines)
+parseServer :: Parser Server
+parseServer = do
+  [serverID, ramCap, cpuCap] <- count 3 integer
+  return $ Server serverID ramCap cpuCap
 
--- toInt :: Integral a => T.Text -> a
--- toInt x = either (const 0) fst (T.decimal x)
+parseVM :: Integer -> Parser VM
+parseVM vmID = do
+  [jobID,vmIndex,ramReq,cpuReq] <- count 4 integer
+  hasAntiCollocation <- read <$> (string "True" <|> string "False")
+  whiteSpace
+  return $ VM vmID jobID vmIndex ramReq cpuReq hasAntiCollocation
 
--- readServer :: T.Text -> Server
--- readServer t = Server sid cpu ram
---   where [sid, cpu, ram] = toInt <$> (T.words t)
-
--- readVM :: T.Text -> VM
--- readVM t = undefined
+parseInput :: Parser Problem
+parseInput = do
+  serverCount <- fromInteger <$> integer
+  servers <- count serverCount parseServer
+  vmCount <- integer
+  vms <- sequence (parseVM <$> [0 .. vmCount - 1])
+  return (servers,vms)
