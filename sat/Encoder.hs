@@ -32,7 +32,7 @@ populate (servers, vms) = Env bimap servers vms
 
 moreLits :: Int -> Maybe (Encoder (Int,Int))
 moreLits x
-  | x > 0 = Just $ lift $ do
+  | x >= 0 = Just $ lift $ do
       n <- get
       put (n + x)
       return (n + 1, n + x)

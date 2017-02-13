@@ -11,6 +11,7 @@ import System.Environment (getArgs)
 import Picosat
 
 import Encoder
+import PBEncoder
 import Encodings
 import Parser
 import Types
@@ -18,10 +19,10 @@ import Types
 constraints :: Int -> [Encoder CNF]
 constraints n =
   [ atLeastOne
-  , atMostOnePairwise
-  , antiCollocationPairwise
-  , capacityLimit
-  , serverUpperLimit n
+  , atMostOne bitwise
+  , antiCollocation bitwise
+  , capacityLimit sequentialWeightedCounter
+  , serverUpperLimit n sequentialWeightedCounter
   ]
 
 encoder :: [Encoder CNF] -> Encoder CNF
@@ -58,16 +59,16 @@ output a = do
       , show (serverID s)
       ]
 
-main = do
-  fileName <- (!!0) <$> getArgs
+main = (!!0) <$> getArgs >>= main'
 
+main' fileName = do
   Just problem <- parse fileName
   let env = populate problem
-  Just a <- solution2assignment env <$> main' env
+  Just a <- solution2assignment env <$> main'' env
   output a
 
-main' :: Environment -> IO Solution
-main' env = loop (length $ servers env) Unknown
+main'' :: Environment -> IO Solution
+main'' env = loop (length $ servers env) Unknown
   where
     loop :: Int -> Solution -> IO Solution
     loop n previousSolution =

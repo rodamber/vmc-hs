@@ -1,10 +1,11 @@
 module Encodings where
 
-import Control.Monad.Trans.Reader (ask)
-import Data.Function (on)
-import Data.List (groupBy, sortBy, tails)
-import Data.Maybe (fromJust)
-import Data.Ord (comparing)
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Reader
+import Data.Function
+import Data.List
+import Data.Maybe
+import Data.Ord
 
 import Encoder
 import PBEncoder
@@ -24,41 +25,60 @@ atLeastOne = do
 
 --------------------------------------------------------------------------------
 
-atMostOnePairwise' :: [Lit] -> CNF
-atMostOnePairwise' lits = [[-l1, -l2] | (l1,l2) <- pairs lits]
+type Encoding = [Lit] -> Encoder CNF
+
+pairwise :: Encoding
+pairwise lits = return [[-l1, -l2] | (l1,l2) <- pairs lits]
 
 pairs :: [a] -> [(a,a)]
-pairs xs = concat $ zipWith zip (map repeat xs) (tails (tail xs))
+pairs xs = [(x,y) | (x:ys) <- tails xs, y <- ys]
 
-atMostOnePairwise :: Encoder CNF
-atMostOnePairwise = do
+bitwise :: Encoding
+bitwise [] = return []
+bitwise lits = do
+  let newLitCount = ceiling (logBase 2 (genericLength lits))
+  (min,max) <- fromJust $ moreLits newLitCount
+
+  let vss = [[-x,x] | x <- [min..max]]
+  let combs = sequence vss
+
+  return $ concat $ zipWith f lits combs
+
+  where
+    f :: Lit -> [Lit] -> CNF
+    f x (y:ys) = [-x,y] : f x ys
+    f _ _ = []
+
+pairs' :: (Eq a, Num a) => [a] -> [(a,a)]
+pairs' = filter (\(x,y) -> x /= -y) . pairs
+
+atMostOne :: Encoding -> Encoder CNF
+atMostOne encoding = do
   Env bimap servers vms <- ask
-  return $ do
+  fmap concat . sequence $ do
     v <- vms
     let lits = map (flip (lookupLit bimap) v) servers
-    atMostOnePairwise' lits
+    return (encoding lits :: Encoder CNF)
 
 --------------------------------------------------------------------------------
 
--- At most one **pairwise** encoding of anti-collocation vms per server.
-antiCollocationPairwise :: Encoder CNF
-antiCollocationPairwise = do
+antiCollocation :: Encoding -> Encoder CNF
+antiCollocation encoding = do
   Env bimap servers vms <- ask
-
-  return $ do
+  fmap concat . sequence $ do
     s <- servers
     j <- jobs vms
+    let lits = map (lookupLit bimap s) (filter hasAntiCollocation j)
+    return (encoding lits :: Encoder CNF)
 
-    let acLits = map (lookupLit bimap s) (filter hasAntiCollocation j)
-    atMostOnePairwise' acLits
 
 jobs :: [VM] -> [[VM]]
 jobs = groupBy ((==) `on` jobID) . sortBy (comparing vmID)
 
 --------------------------------------------------------------------------------
 
-capacityLimit :: Encoder CNF
-capacityLimit = do
+capacityLimit :: PBEncoding -> Encoder CNF
+capacityLimit encoding = do
   Env bimap servers vms <- ask
 
   let encode :: Hardware -> [Encoder CNF]
@@ -69,7 +89,7 @@ capacityLimit = do
               v <- vms
               return (req hw v, lookupLit bimap s v)
 
-        return $ swc $ PB wxs (cap hw s)
+        return $ encoding $ PB wxs (cap hw s)
 
   concat <$> sequence (encode CPU ++ encode RAM)
 
@@ -85,8 +105,8 @@ req RAM = ramReq
 
 --------------------------------------------------------------------------------
 
-serverUpperLimit :: Int -> Encoder CNF
-serverUpperLimit n = do
+serverUpperLimit :: Int -> PBEncoding -> Encoder CNF
+serverUpperLimit n encoding = do
   Env bimap servers vms <- ask
   (min,max) <- fromJust $ moreLits (length servers)
 
@@ -102,6 +122,6 @@ serverUpperLimit n = do
         return [-lit, on s]
 
   let onLimit :: Encoder CNF
-      onLimit = swc (PB [(1,on(s)) | s <- servers] n)
+      onLimit = encoding (PB [(1,on(s)) | s <- servers] n)
 
   (++ turnedOn) <$> onLimit

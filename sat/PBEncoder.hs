@@ -9,9 +9,10 @@ import Types
 -- Pseudo-Boolean Expression
 data PBExpr = PB [(Int, Lit)] Int
 
--- Sequential Weighted Counter
-swc :: PBExpr -> Encoder CNF
-swc (PB wxs k) = do
+type PBEncoding = PBExpr -> Encoder CNF
+
+sequentialWeightedCounter :: PBExpr -> Encoder CNF
+sequentialWeightedCounter (PB wxs k) = do
   let n = length wxs
   (min,max) <- fromJust $ moreLits (k * n)
 
@@ -26,3 +27,5 @@ swc (PB wxs k) = do
     ++ [[- x i, -s (i-1) j, s i (j + w i)] | i <- [2..n], j <- [1..k - w i]]
     ++ [[- x i, -s (i-1) (k + 1 - w i)] | i <- [2..n]]
 
+generalizedTotalizer :: PBExpr -> Encoder CNF
+generalizedTotalizer (PB wxs k) = undefined
