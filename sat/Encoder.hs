@@ -25,6 +25,9 @@ type Encoder = ReaderT Environment (State LitCount)
 lookupLit :: B.Bimap Lit (Server, VM) -> Server -> VM -> Lit
 lookupLit bm s v = fromJust (B.lookupR (s,v) bm)
 
+emptyEnv :: Environment
+emptyEnv = Env B.empty [] []
+
 populate :: Problem -> Environment
 populate (servers, vms) = Env bimap servers vms
   where
@@ -38,6 +41,12 @@ moreLits x
       return (n + 1, n + x)
   | otherwise = Nothing
 
-encode :: Environment -> Encoder CNF -> CNF
+newLit :: Encoder Int
+newLit = lift $ do
+  n <- get
+  put (n+1)
+  return (n+1)
+
+encode :: Environment -> Encoder a -> a
 encode env encoder = evalState (runReaderT encoder env) litCount
   where litCount = B.size (bimap env)
