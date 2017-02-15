@@ -1,11 +1,13 @@
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveFoldable    #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE TupleSections     #-}
 
 module PBEncoder where
 
 import Control.Monad
 import Control.Monad.Trans.Reader
+import Data.Bits
 import Data.List
 import Data.Maybe
 
@@ -26,6 +28,9 @@ data PBExpr = PB [WL] Int
 
 type PBEncoding = PBExpr -> Encoder CNF
 
+--------------------------------------------------------------------------------
+-- Sequential Weighted Counter
+
 sequentialWeightedCounter :: PBEncoding
 sequentialWeightedCounter (PB wxs k) = do
   let n = length wxs
@@ -42,35 +47,16 @@ sequentialWeightedCounter (PB wxs k) = do
     ++ [[- x i, -s (i-1) j, s i (j + w i)] | i <- [2..n], j <- [1..k - w i]]
     ++ [[- x i, -s (i-1) (k + 1 - w i)] | i <- [2..n]]
 
-generalizedTotalizer :: PBEncoding
-generalizedTotalizer (PB wxs k) = do
-  -- cnf <- encodeTree <$> build wxs
-  undefined
-  -- let kLit = maximum (concat cnf) -- FIXME: Wrong!
-  -- return ([-kLit] : cnf)
-
-data BTree a = L a | N (BTree a) a (BTree a)
-  deriving (Functor, Foldable, Traversable)
-
-type BT = BTree [WL]
-
-instance Show a => Show (BTree a) where
-  show = showTree 0
-
-showTree :: Show a => Int -> BTree a -> String
-showTree _ (L xs)     = "L " ++ show xs
-showTree n (N l xs r) = "N (" ++ showTree (n + 3) l ++ ")\n" ++
-                        iden n ++ "  (" ++ show xs ++ ")\n" ++
-                        iden n ++ "  (" ++ showTree (n + 3) r ++ ")"
-  where
-    iden n = (replicate n ' ')
-
-
 --------------------------------------------------------------------------------
+-- Generalized Totalizer
+-- Paper describing the encoding: https://arxiv.org/pdf/1507.05920.pdf
 
--- g n xss = filter (<= n+1) $
-g :: (Traversable t, Num a, Eq a) => t [a] -> [a]
-g xss = nub $ (concat xss) ++ map sum (sequence xss)
+-- FIXME: @see totalizerTree
+generalizedTotalizer :: PBEncoding
+generalizedTotalizer (PB wxs k) = totalizerTree wxs >>= return . encodeTree k
+
+sums :: (Traversable t, Num a, Eq a) => t [a] -> [a]
+sums xss = nub $ concat xss ++ fmap sum (sequence xss)
 
 chunks :: Integral t => t -> [a] -> [[a]]
 chunks _ [] = []
@@ -81,40 +67,61 @@ level0 :: [a] -> [[a]]
 level0 = map (:[])
 
 levelUp :: (Num a, Eq a) => [[a]] -> [[a]]
-levelUp = fmap g . chunks 2
+levelUp = fmap sums . chunks 2
 
-levels :: (Num a, Eq a) => [a] -> [[[a]]]
-levels xss = map ($ xss') (scanr1 (.) (replicate height levelUp)) ++ [xss']
-  where xss' = level0 xss
-        height = ceiling $ logBase 2 $ genericLength xss
+levels :: (Num a, Eq a) => [[a]] -> [[[a]]]
+levels xss = ($ xss) <$> scanr1 (.) (replicate height levelUp)
+  where height = ceiling $ logBase 2 $ genericLength xss
 
--- Rewrite levels with this?
-iterateN f n = genericTake n . iterate f
-
-build :: (Num t, Eq t) => [t] -> BTree [t]
-build = head . build' . levels
+build :: [[a]] -> BTree a
+build = head . build'
 
 build' :: [[a]] -> [BTree a]
-build' (xs:ys:t) = zipWith mkNode xs (chunks 2 (build' (ys:t)))
 build' [xs] = map L xs
+build' (xs:ys:t) = zipWith mkNode xs (chunks 2 (build' (ys:t)))
+  where mkNode z [x,y] = N x z y
 
-mkNode :: a -> [BTree a] -> BTree a
-mkNode z [x,y] = N x z y
+tree :: [WL] -> Encoder (BTree [WL])
+tree xs = labeled >>= return . build . (++ [level0 xs])
+  where
+    ws = level0 (map fst xs)
+    labeled = (traverse . traverse . traverse) label (levels ws)
 
--- FIXME: This forgets the original literals!
-totalizerTree :: [Int] -> Encoder (BTree [WL])
-totalizerTree xs =
-  let tree       = build xs
-      mkLiterals = traverse (\x -> newLit >>= \l -> return (x, l))
-  in traverse mkLiterals tree
+-- FIXME: The encoding spec does not specify how to structure the tree if the
+-- formula size is not a power of two, so we're left wondering...
+-- Our approach was to divide the input list in smaller lists, with the size of
+-- each being a power of two and then merging them.
+totalizerTree :: [WL] -> Encoder (BTree [WL])
+totalizerTree xs = mergeAll (tree <$> splitXs)
+  where splitXs = takes ((2^) <$> flags (length xs)) xs
 
-value :: BTree a -> a
-value (L x)     = x
-value (N _ x _) = x
+mergeAll :: [Encoder (BTree [WL])] -> Encoder (BTree [WL])
+mergeAll = head . mergeAll'
 
-encodeTree :: BTree [WL] -> CNF
-encodeTree (L _) = []
-encodeTree (N lhs wls rhs) =
+mergeAll' :: [Encoder (BTree [WL])] -> [Encoder (BTree [WL])]
+mergeAll' (x:y:ys) = mergeAll' $ (merge x y) : (mergeAll' ys)
+mergeAll' xs = xs
+
+merge :: Encoder (BTree [WL]) -> Encoder (BTree [WL]) -> Encoder (BTree [WL])
+merge e1 e2 = do
+  t1 <- e1
+  t2 <- e2
+  v' <- traverse label (sums $ fmap fst <$> value <$> [t1, t2])
+  return (N t1 v' t2)
+
+label :: t -> Encoder (t, Int)
+label w = newLit >>= return . (w,)
+
+takes xs ys = ($ys) <$> take <$> xs
+flags x = filter (testBit x) [0 .. finiteBitSize (x::Int)]
+
+encodeTree :: Int -> BTree [WL] -> CNF
+encodeTree k node@(N _ wls _) = [[-lit] | (weight, lit) <- wls, weight > k]
+                                ++ encodeTree' node
+
+encodeTree' :: BTree [WL] -> CNF
+encodeTree' (L _) = []
+encodeTree' (N lhs wls rhs) =
   let lvalues = value lhs
       rvalues = value rhs
 
@@ -127,4 +134,24 @@ encodeTree (N lhs wls rhs) =
         (wl, ll) <- lvalues
         (wr, rl) <- rvalues
         return [-ll, -rl, lookup' (wl + wr) wls]
-  in concat [simpleClauses, sumClauses, encodeTree lhs, encodeTree rhs]
+  in concat [simpleClauses, sumClauses, encodeTree' lhs, encodeTree' rhs]
+
+
+data BTree a = L a | N (BTree a) a (BTree a)
+  deriving (Functor, Foldable, Traversable)
+
+value :: BTree a -> a
+value (L x)     = x
+value (N _ x _) = x
+
+instance Show a => Show (BTree a) where
+  show = showTree 0
+
+showTree :: Show a => Int -> BTree a -> String
+showTree _ (L xs)     = "L " ++ show xs
+showTree n (N l xs r) = "N (" ++ showTree (n + 3) l ++ ")\n" ++
+                        iden n ++ "  (" ++ show xs ++ ")\n" ++
+                        iden n ++ "  (" ++ showTree (n + 3) r ++ ")"
+  where
+    iden n = (replicate n ' ')
+
