@@ -50,3 +50,5 @@ newLit = lift $ do
 encode :: Environment -> Encoder a -> a
 encode env encoder = evalState (runReaderT encoder env) litCount
   where litCount = B.size (bimap env)
+
+__dummy_encode encoder litCount = evalState (runReaderT encoder emptyEnv) litCount

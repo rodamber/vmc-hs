@@ -1,3 +1,7 @@
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE DeriveFoldable    #-}
+{-# LANGUAGE DeriveTraversable #-}
+
 module PBEncoder where
 
 import Control.Monad
@@ -10,6 +14,13 @@ import Types
 
 -- Weighted literal
 type WL = (Int,Lit)
+
+weight :: WL -> Int
+weight = fst
+
+lit :: WL -> Int
+lit = snd
+
 -- Pseudo-boolean expression
 data PBExpr = PB [WL] Int
 
@@ -32,14 +43,21 @@ sequentialWeightedCounter (PB wxs k) = do
     ++ [[- x i, -s (i-1) (k + 1 - w i)] | i <- [2..n]]
 
 generalizedTotalizer :: PBEncoding
-generalizedTotalizer (PB wxs k) = undefined
+generalizedTotalizer (PB wxs k) = do
+  -- cnf <- encodeTree <$> build wxs
+  undefined
+  -- let kLit = maximum (concat cnf) -- FIXME: Wrong!
+  -- return ([-kLit] : cnf)
 
-data BT = L [WL] | N BT [WL] BT
+data BTree a = L a | N (BTree a) a (BTree a)
+  deriving (Functor, Foldable, Traversable)
 
-instance Show BT where
+type BT = BTree [WL]
+
+instance Show a => Show (BTree a) where
   show = showTree 0
 
-showTree :: Int -> BT -> String
+showTree :: Show a => Int -> BTree a -> String
 showTree _ (L xs)     = "L " ++ show xs
 showTree n (N l xs r) = "N (" ++ showTree (n + 3) l ++ ")\n" ++
                         iden n ++ "  (" ++ show xs ++ ")\n" ++
@@ -47,65 +65,66 @@ showTree n (N l xs r) = "N (" ++ showTree (n + 3) l ++ ")\n" ++
   where
     iden n = (replicate n ' ')
 
-value :: BT -> [WL]
-value (L x)     = x
-value (N _ x _) = x
-
-weights :: BT -> [Int]
-weights = map fst . value
-
-half :: Integral b => [a] -> b
-half = ceiling . (/2) . genericLength
-
-halve :: [a] -> ([a],[a])
-halve xs = splitAt (half xs) xs
-
-build :: [WL] -> Encoder BT
-build [x,y,z]  = build [x,y] >>= buildNode (L [z])
-build [x,y]    = buildNode (L [x]) (L [y])
-build [x]      = return (L [x])
-build []       = error "build: no literals"
-build xs       = do let (ys,zs) = halve xs
-                    ny <- build ys
-                    nz <- build zs
-                    buildNode ny nz
-
-buildNode :: BT -> BT -> Encoder BT
-buildNode xs ys = do
-  let xWeights   = weights xs
-      yWeights   = weights ys
-      newWeights = nub $ xWeights ++ yWeights ++
-                   map sum (sequence [xWeights, yWeights])
-
-  (min,max) <- fromJust $ moreLits (length newWeights)
-
-  let newWeightedLiterals = zip newWeights [min..max]
-  return $ N xs newWeightedLiterals ys
-
 
 --------------------------------------------------------------------------------
 
 -- g n xss = filter (<= n+1) $
-g xss =
-  nub $ (concat xss) ++  map sum (sequence xss)
+g :: (Traversable t, Num a, Eq a) => t [a] -> [a]
+g xss = nub $ (concat xss) ++ map sum (sequence xss)
 
+chunks :: Integral t => t -> [a] -> [[a]]
 chunks _ [] = []
-chunks n xs = take n xs : chunks n (drop n xs)
+chunks n xs = ys : chunks n zs
+  where (ys,zs) = genericSplitAt n xs
 
-type Level a = [[a]]
+level0 :: [a] -> [[a]]
+level0 = map (:[])
 
--- levelUp :: (Ord a, Num a) => a -> Level a -> Level a
--- levelUp n = fmap (g n) . chunks 2
+levelUp :: (Num a, Eq a) => [[a]] -> [[a]]
 levelUp = fmap g . chunks 2
 
--- levels :: (Ord a, Num a) => a -> Level a -> [Level a]
--- levels n xss = xss : (map ($ xss) $ scanl1 (.) (replicate height (levelUp n)))
-levels xss = xss : (map ($ xss) $ scanl1 (.) (replicate height levelUp))
-  where
-    height = ceiling $ logBase 2 $ genericLength xss
+levels :: (Num a, Eq a) => [a] -> [[[a]]]
+levels xss = map ($ xss') (scanr1 (.) (replicate height levelUp)) ++ [xss']
+  where xss' = level0 xss
+        height = ceiling $ logBase 2 $ genericLength xss
 
--- level0 = [[2],[3],[3],[3]]
--- level1 = levelUp 5 level0 -- [[2,3,5],[3,6]]
--- level2 = levelUp 5 level1 -- [[2,3,5,6]]
--- level3 = levelUp 5 level2 -- [[2,3,5,6]]
+-- Rewrite levels with this?
+iterateN f n = genericTake n . iterate f
 
+build :: (Num t, Eq t) => [t] -> BTree [t]
+build = head . build' . levels
+
+build' :: [[a]] -> [BTree a]
+build' (xs:ys:t) = zipWith mkNode xs (chunks 2 (build' (ys:t)))
+build' [xs] = map L xs
+
+mkNode :: a -> [BTree a] -> BTree a
+mkNode z [x,y] = N x z y
+
+-- FIXME: This forgets the original literals!
+totalizerTree :: [Int] -> Encoder (BTree [WL])
+totalizerTree xs =
+  let tree       = build xs
+      mkLiterals = traverse (\x -> newLit >>= \l -> return (x, l))
+  in traverse mkLiterals tree
+
+value :: BTree a -> a
+value (L x)     = x
+value (N _ x _) = x
+
+encodeTree :: BTree [WL] -> CNF
+encodeTree (L _) = []
+encodeTree (N lhs wls rhs) =
+  let lvalues = value lhs
+      rvalues = value rhs
+
+      lookup' x m = fromJust (lookup x m)
+
+      simpleClauses = (flip map) (lvalues ++ rvalues) $
+                      \(weight, lit) -> [-lit, lookup' weight wls]
+
+      sumClauses = do
+        (wl, ll) <- lvalues
+        (wr, rl) <- rvalues
+        return [-ll, -rl, lookup' (wl + wr) wls]
+  in concat [simpleClauses, sumClauses, encodeTree lhs, encodeTree rhs]

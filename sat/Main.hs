@@ -21,8 +21,8 @@ constraints n =
   [ atLeastOne
   , atMostOne bitwise
   , antiCollocation bitwise
-  , capacityLimit sequentialWeightedCounter
-  , serverUpperLimit n sequentialWeightedCounter
+  , capacityLimit generalizedTotalizer
+  , serverUpperLimit n generalizedTotalizer
   ]
 
 encoder :: [Encoder CNF] -> Encoder CNF

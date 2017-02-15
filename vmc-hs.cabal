@@ -32,6 +32,7 @@ executable vmc-hs-exe
                      , bimap
                      , picosat
                      , trifecta
+                     , containers
   other-modules:       Encoder
                      , PBEncoder
                      , Encodings
