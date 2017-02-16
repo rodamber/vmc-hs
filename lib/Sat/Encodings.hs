@@ -1,4 +1,4 @@
-module Encodings where
+module Sat.Encodings where
 
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Reader
@@ -7,8 +7,8 @@ import Data.List
 import Data.Maybe
 import Data.Ord
 
-import Encoder
-import PBEncoder
+import Sat.Encoder
+import Sat.PBEncoder
 import Types
 
 --------------------------------------------------------------------------------

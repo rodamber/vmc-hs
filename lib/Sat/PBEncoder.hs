@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE TupleSections     #-}
 
-module PBEncoder where
+module Sat.PBEncoder where
 
 import Control.Monad
 import Control.Monad.Trans.Reader
@@ -11,7 +11,7 @@ import Data.Bits
 import Data.List
 import Data.Maybe
 
-import Encoder
+import Sat.Encoder
 import Types
 
 -- Weighted literal

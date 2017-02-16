@@ -10,9 +10,7 @@ import System.Environment (getArgs)
 
 import Picosat
 
-import Encoder
-import PBEncoder
-import Encodings
+import Sat
 import Parser
 import Types
 

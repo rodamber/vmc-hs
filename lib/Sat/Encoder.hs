@@ -1,4 +1,4 @@
-module Encoder where
+module Sat.Encoder where
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader
