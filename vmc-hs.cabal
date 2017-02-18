@@ -16,33 +16,41 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      lib
 
-  exposed-modules:     Types
-                     , Parser
-                     , Sat
-                     , Sat.Encoder
-                     , Sat.PBEncoder
-                     , Sat.Encodings
+  exposed-modules:     Problem
+                     , Server
+                     , VM
+                     , Internal.VM
+                     -- , Parser
+                     -- , Sat
+                     -- , Sat.Encoder
+                     -- , Sat.PBEncoder
+                     -- , Sat.Encodings
+
+  ghc-options:         -Wall -Wno-unused-top-binds
 
   build-depends:       base >= 4.7 && < 5
                      , bimap
+                     , containers
+                     , mtl
                      , text
                      , transformers
                      , trifecta
+                     , validation
 
   default-language:    Haskell2010
 
 
-executable picosat
-  hs-source-dirs:      picosat
-  main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+-- executable picosat
+--   hs-source-dirs:      picosat
+--   main-is:             Main.hs
+--   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall -Wextra
 
-  build-depends:       base
-                     , bimap
-                     , picosat
-                     , vmc-hs
+--   build-depends:       base
+--                      , bimap
+--                      , picosat
+--                      , vmc-hs
 
-  default-language:    Haskell2010
+--   default-language:    Haskell2010
 
 test-suite test
   type:                exitcode-stdio-1.0
