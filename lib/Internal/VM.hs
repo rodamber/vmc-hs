@@ -10,15 +10,15 @@ import Data.Validation
 -- | Represents a virtual machine (VM) in the domain.
 data VM = VM
   { -- | Unique global ID.
-    vmID_               :: Int
+    vmID_  :: Int
     -- | The job to which the VM belongs.
-  , jobID_              :: Int
+  , jobID_ :: Int
     -- | Unique ID inside among the VMs in the same job.
-  , vmIndex_            :: Int
+  , vmIndex_ :: Int
   -- | RAM requirement. Should be positive.
-  , ramReq_             :: Int
+  , ramReq_ :: Int
   -- | CPU requirement. Should be positive.
-  , cpuReq_             :: Int
+  , cpuReq_ :: Int
   -- | A VM with an /anti-collocation/ constraint can't be placed in the same
   -- server as another VM belonging to the same job with an /anti-collocation/
   -- constraint.
@@ -76,14 +76,18 @@ type CPU = Int
 -- | Simple type alias, nothing fancy.
 type RAM = Int
 
--- | Unique VM ID supply. Also mantains the mapping between the jobs and the
+-- | Unique VM ID store. Also mantains the mapping between the jobs and the
 -- indices of the VMs already built. This state is used by VMBuilder to ensure
 -- that the ID of each VM is unique and that the VMs have unique indices inside
 -- each job.
-data VMState = VMState
+data Env = Env
   { nextID      :: ID                  -- ^ Next available ID.
   , usedIndices :: (M.IntMap S.IntSet) -- ^ Mapping from jobs to VM indices
   }
+
+-- | Initial VM building environment. IDs start at 0 and no VMs were built yet.
+initialEnv :: Env
+initialEnv = Env 0 M.empty
 
 -- | Represents an error when building a VM.
 data VMError =
@@ -96,7 +100,7 @@ data VMError =
 
 -- | VM builder. Ensures the resulting VM is valid.
 newtype VMBuilder = VMBuilder
-  { runVMBuilder :: State VMState (AccValidation [VMError] VM) }
+  { runVMBuilder :: State Env (AccValidation [VMError] VM) }
 
 -- | Ensures the real is non-negative.
 nonNegative :: Real a => (a -> VMError) -> a -> AccValidation [VMError] a
@@ -121,7 +125,7 @@ nonNegativeRAMReq = nonNegative NegativeRAM
 -- | Ensures that the index is unique __in the same job__.
 uniqueVMIndex :: ID -- ^ Job id
               -> Int -- ^ VM index in that job
-              -> State VMState (AccValidation [VMError] Int)
+              -> State Env (AccValidation [VMError] Int)
 uniqueVMIndex id' ix = do
   indices <- gets usedIndices
   case M.lookup id' indices of
@@ -137,20 +141,24 @@ uniqueVMIndex id' ix = do
 
 -- | Adds a new VM index to the used indices of that job. __Does not check__ if
 -- it is unique.
-addVMIndex :: ID -- ^ JobID
+addVMIndex :: ID -- ^ ID of the job in question
            -> Int -- ^ VM index in that job
-           -> State VMState ()
+           -> State Env ()
 addVMIndex id' ix = modify $ \s ->
   s { usedIndices = M.insertWith (S.union) id' (S.singleton ix) (usedIndices s) }
 
--- | Generates /unique/ VM IDs
-genID :: State VMState Int
+-- | Generates /unique/ VM IDs.
+genID :: State Env Int
 genID = do
   id' <- gets nextID
   modify $ \s -> s { nextID = id' + 1}
   return id'
 
--- | Builds a new /valid/ VM.
+-- | Builds a new /valid/ VM, i.e.:
+--
+-- * VM ID, job ID, VM index and the requirements are non-negative;
+-- * VM ID is unique;
+-- * VM index is unique among the VMs of its job.
 buildVM :: ID -> Int -> RAM -> CPU -> Bool -> VMBuilder
 buildVM jobID' vmIndex' ramReq' cpuReq' antiCol' = VMBuilder $ do
   vmID' <- genID
@@ -170,8 +178,5 @@ buildVM jobID' vmIndex' ramReq' cpuReq' antiCol' = VMBuilder $ do
     isSuccess (AccFailure _) = False
     isSuccess (AccSuccess _) = True
 
-initialState :: State VMState ()
-initialState = put $ VMState 0 M.empty
-
--- mkVM :: VMBuilder -> AccValidation [VMState] VM
+-- mkVM :: VMBuilder -> AccValidation [Env] VM
 -- mkVM = runVMBuilder . flip evalState
